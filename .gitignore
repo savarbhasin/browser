@@ -1,0 +1,35 @@
+# Build outputs
+dist/
+*.exe
+*.dmg
+
+# Chromium downloads
+chromium/
+.chromium-download/
+
+# macOS
+.DS_Store
+*.icns
+mac-app/MyCustomBrowser.app/Contents/Resources/
+
+# Windows
+*.tmp
+
+# Logs
+*.log
+
+# Chrome profile data
+chrome-profile/
+
+# Node modules (if any in root)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+temp.dmg
+

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# MyCustomBrowser Launcher - macOS App Bundle
+# Launches bundled Chromium with extension pre-loaded
+
+# Get the directory where this app bundle is located
+APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../../.." && pwd )"
+RESOURCES_DIR="$APP_DIR/Contents/Resources"
+
+# Path to bundled Chromium
+CHROMIUM_PATH="$RESOURCES_DIR/chromium/Chromium.app/Contents/MacOS/Chromium"
+
+# Check if Chromium exists
+if [ ! -f "$CHROMIUM_PATH" ]; then
+    osascript -e 'display dialog "Chromium not found!\n\nThis app bundle may be corrupted.\nPlease reinstall MyCustomBrowser." buttons {"OK"} default button "OK" with icon stop'
+    exit 1
+fi
+
+# Extension path
+EXT_PATH="$RESOURCES_DIR/extension/dist"
+
+# Profile path
+PROFILE_PATH="$HOME/Library/Application Support/MyCustomBrowser"
+
+# Create profile directory if it doesn't exist
+mkdir -p "$PROFILE_PATH"
+
+# Launch Chromium with the extension
+"$CHROMIUM_PATH" --load-extension="$EXT_PATH" --user-data-dir="$PROFILE_PATH" --no-first-run --no-default-browser-check > /dev/null 2>&1 &
+

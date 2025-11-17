@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "URL Phishing Detector",
+  "version": "0.1.0",
+  "description": "Scores URLs using a local FastAPI backend.",
+  "action": {
+    "default_title": "Check",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["tabs", "activeTab", "notifications", "storage", "identity", "declarativeNetRequest"],
+  "host_permissions": ["http://localhost:8000/*", "<all_urls>", "https://www.googleapis.com/*", "https://accounts.google.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "oauth2": {
+    "client_id": "715101676292-sp6mumlgtdtv0j5gfaupj02jcc4oge7j.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  }
+}
