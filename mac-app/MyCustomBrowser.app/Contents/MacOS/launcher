@@ -3,8 +3,8 @@
 # MyCustomBrowser Launcher - macOS App Bundle
 # Launches bundled Chromium with extension pre-loaded
 
-# Get the directory where this app bundle is located
-APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../../.." && pwd )"
+# Determine the .app bundle root (two levels up from MacOS directory)
+APP_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 
 # Path to bundled Chromium

@@ -1,4 +1,4 @@
-import type { CheckResult, User } from '../types';
+import type { CheckResult } from '../types';
 
 export class StorageManager {
   // Cache management
@@ -30,48 +30,6 @@ export class StorageManager {
           resolve();
         }
       });
-    });
-  }
-
-  // User management
-  static async getUser(): Promise<User | null> {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['user'], (items) => {
-        resolve(items.user || null);
-      });
-    });
-  }
-
-  static async setUser(user: User): Promise<void> {
-    return new Promise((resolve) => {
-      chrome.storage.local.set({ user }, () => resolve());
-    });
-  }
-
-  static async removeUser(): Promise<void> {
-    return new Promise((resolve) => {
-      chrome.storage.local.remove(['user'], () => resolve());
-    });
-  }
-
-  // Auth token management
-  static async getAuthToken(): Promise<string | null> {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['authToken'], (items) => {
-        resolve(items.authToken || null);
-      });
-    });
-  }
-
-  static async setAuthToken(token: string): Promise<void> {
-    return new Promise((resolve) => {
-      chrome.storage.local.set({ authToken: token }, () => resolve());
-    });
-  }
-
-  static async removeAuthToken(): Promise<void> {
-    return new Promise((resolve) => {
-      chrome.storage.local.remove(['authToken'], () => resolve());
     });
   }
 }

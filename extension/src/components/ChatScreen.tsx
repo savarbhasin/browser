@@ -151,7 +151,7 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="w-[600px] h-[600px] bg-dark-bg flex flex-col">
+    <div className="w-full max-w-[1200px] mx-auto h-[600px] bg-dark-bg flex flex-col">
       {/* Header */}
       <div className="px-4 py-3 border-b border-dark-border">
         <div className="flex items-center justify-between">

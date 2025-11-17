@@ -32,6 +32,30 @@ async function checkUrl(url: string): Promise<CheckResult | null> {
   }
 }
 
+async function batchCheckUrls(urls: string[]): Promise<Map<string, CheckResult>> {
+  try {
+    // Send message to background script to perform batch check
+    const response = await chrome.runtime.sendMessage({
+      type: 'BATCH_CHECK_URLS',
+      urls: urls
+    });
+
+    const resultMap = new Map<string, CheckResult>();
+    
+    if (response && response.results) {
+      // Map results by URL for easy lookup
+      for (const result of response.results) {
+        resultMap.set(result.url, result);
+      }
+    }
+    
+    return resultMap;
+  } catch (error) {
+    console.error("Error batch checking URLs:", error);
+    return new Map();
+  }
+}
+
 function highlightLink(element: HTMLAnchorElement, result: CheckResult) {
   // Remove existing highlights
   element.style.border = "";
@@ -40,13 +64,10 @@ function highlightLink(element: HTMLAnchorElement, result: CheckResult) {
   element.style.backgroundColor = "";
   element.title = ""; // Clear tooltip
   
-  // Determine highlight style based on verdict
+  // Only highlight suspicious and unsafe links - skip safe links
   if (result.final_verdict === "safe") {
-    // Safe - green border
-    element.style.border = "2px solid #10b981";
-    element.style.borderRadius = "2px";
-    element.style.padding = "1px";
-    element.title = `✅ Safe (ML Score: ${result.ml_score.toFixed(2)}, Confidence: ${result.confidence})`;
+    // Don't highlight safe links
+    return;
   } else if (result.final_verdict === "suspicious") {
     // Suspicious - orange border
     element.style.border = "2px solid #f59e0b";
@@ -158,11 +179,10 @@ function highlightTextUrl(span: HTMLElement, result: CheckResult) {
   span.style.backgroundColor = "";
   span.style.color = "";
   
-  // Determine highlight style based on verdict
+  // Only highlight suspicious and unsafe links - skip safe links
   if (result.final_verdict === "safe") {
-    span.style.color = "#10b981";
-    span.style.borderBottom = "2px solid #10b981";
-    span.title = `✅ Safe (ML Score: ${result.ml_score.toFixed(2)}, Confidence: ${result.confidence})`;
+    // Don't highlight safe URLs
+    return;
   } else if (result.final_verdict === "suspicious") {
     span.style.color = "#f59e0b";
     span.style.borderBottom = "2px solid #f59e0b";
@@ -242,37 +262,87 @@ async function checkAndHighlightLinks() {
     }
   }
 
-  // Check each unique URL
-  const checkPromises = Array.from(urlMap.entries()).map(async ([url, linkElements]) => {
-    // Check cache first
-    const cacheKey = `url_${url}`;
-    return new Promise<void>((resolve) => {
-      chrome.storage.local.get([cacheKey], async (items) => {
-        let result = items[cacheKey] as CheckResult | null;
-        
-        if (!result) {
-          result = await checkUrl(url);
-          if (result) {
-            chrome.storage.local.set({ [cacheKey]: result });
-          }
-        }
+  const allUrls = Array.from(urlMap.keys());
+  if (allUrls.length === 0) {
+    return;
+  }
 
-        if (result) {
-          // Highlight all elements with this URL
-          linkElements.forEach((item) => {
-            if (item.isLink) {
-              highlightLink(item.element as HTMLAnchorElement, result!);
-            } else {
-              highlightTextUrl(item.element, result!);
-            }
-          });
-        }
-        resolve();
-      });
+  console.log(`[URL Safety] Found ${allUrls.length} unique URLs on page`);
+
+  // Check cache for all URLs
+  const cacheKeys = allUrls.map(url => `url_${url}`);
+  const cachedResults = await new Promise<Record<string, CheckResult>>((resolve) => {
+    chrome.storage.local.get(cacheKeys, (items) => {
+      resolve(items);
     });
   });
 
-  await Promise.all(checkPromises);
+  // Separate cached and uncached URLs
+  const resultsMap = new Map<string, CheckResult>();
+  const urlsToCheck: string[] = [];
+
+  for (const url of allUrls) {
+    const cacheKey = `url_${url}`;
+    const cached = cachedResults[cacheKey];
+    if (cached) {
+      resultsMap.set(url, cached);
+    } else {
+      urlsToCheck.push(url);
+    }
+  }
+
+  if (resultsMap.size > 0) {
+    console.log(`[URL Safety] ${resultsMap.size} URLs loaded from cache`);
+  }
+
+  // Batch check uncached URLs (in chunks of 100)
+  if (urlsToCheck.length > 0) {
+    console.log(`[URL Safety] Checking ${urlsToCheck.length} uncached URLs using batch API...`);
+    const startTime = performance.now();
+    
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    
+    for (let i = 0; i < urlsToCheck.length; i += BATCH_SIZE) {
+      batches.push(urlsToCheck.slice(i, i + BATCH_SIZE));
+    }
+
+    // Process all batches in parallel
+    const batchResults = await Promise.all(
+      batches.map(batch => batchCheckUrls(batch))
+    );
+
+    // Merge all batch results
+    const cacheUpdates: Record<string, CheckResult> = {};
+    for (const batchResult of batchResults) {
+      for (const [url, result] of batchResult.entries()) {
+        resultsMap.set(url, result);
+        cacheUpdates[`url_${url}`] = result;
+      }
+    }
+
+    // Update cache with all new results
+    if (Object.keys(cacheUpdates).length > 0) {
+      chrome.storage.local.set(cacheUpdates);
+    }
+    
+    const endTime = performance.now();
+    console.log(`[URL Safety] Batch check completed in ${(endTime - startTime).toFixed(2)}ms (${batches.length} batch${batches.length > 1 ? 'es' : ''})`);
+  }
+
+  // Highlight all URLs based on results
+  for (const [url, linkElements] of urlMap.entries()) {
+    const result = resultsMap.get(url);
+    if (result) {
+      linkElements.forEach((item) => {
+        if (item.isLink) {
+          highlightLink(item.element as HTMLAnchorElement, result);
+        } else {
+          highlightTextUrl(item.element, result);
+        }
+      });
+    }
+  }
 }
 
 // Debounce function to avoid excessive checks

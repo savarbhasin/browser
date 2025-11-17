@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { apiClient } from '../utils/api';
-import { StorageManager } from '../utils/storage';
-import type { User } from '../types';
 import '../styles/global.css';
 
 interface ReportScreenProps {
@@ -29,16 +27,10 @@ export const ReportScreen: React.FC<ReportScreenProps> = ({ onBack }) => {
     setSuccess(false);
 
     try {
-      const user = await StorageManager.getUser();
-      if (!user) {
-        throw new Error('User not authenticated');
-      }
-
       await apiClient.submitReport({
         url: url.trim(),
         type,
-        description: description.trim(),
-        user_id: user.id
+        description: description.trim()
       });
 
       setSuccess(true);

@@ -28,6 +28,10 @@ const copyManifestPlugin = () => {
         let content = readFileSync(popupInSubdir, "utf-8");
         // Update script paths from absolute to relative
         content = content.replace(/src="\/assets\//g, 'src="./assets/');
+        content = content.replace(/href="\/assets\//g, 'href="./assets/');
+        // Fix any incorrect relative paths (../../assets/ -> ./assets/)
+        content = content.replace(/src="\.\.\/\.\.\/assets\//g, 'src="./assets/');
+        content = content.replace(/href="\.\.\/\.\.\/assets\//g, 'href="./assets/');
         writeFileSync(popupInRoot, content);
         console.log("✓ Moved popup.html to dist/ root");
       }

@@ -47,19 +47,17 @@ APP_BUNDLE="mac-app/${APP_NAME}.app"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
-# Copy the launcher script
-cp mac-app/${APP_NAME}.app/Contents/MacOS/launcher "${APP_BUNDLE}/Contents/MacOS/"
-chmod +x "${APP_BUNDLE}/Contents/MacOS/launcher"
-
-# Copy Info.plist
-cp mac-app/${APP_NAME}.app/Contents/Info.plist "${APP_BUNDLE}/Contents/"
+# Ensure launcher script is executable
+chmod +x mac-app/${APP_NAME}.app/Contents/MacOS/launcher
 
 # Copy extension to Resources
 echo "Copying extension..."
+rm -rf "${APP_BUNDLE}/Contents/Resources/extension"
 cp -r extension "${APP_BUNDLE}/Contents/Resources/"
 
 # Copy Chromium to Resources
 echo "Copying Chromium (this may take a minute)..."
+rm -rf "${APP_BUNDLE}/Contents/Resources/chromium"
 mkdir -p "${APP_BUNDLE}/Contents/Resources/chromium"
 cp -R chromium/Chromium.app "${APP_BUNDLE}/Contents/Resources/chromium/"
 
@@ -77,13 +75,14 @@ OUTPUT_DMG="dist/${DMG_NAME}"
 # Create dist directory if it doesn't exist
 mkdir -p dist
 
-# Remove old DMG if it exists
+# Remove old DMG files if they exist
 rm -f "${OUTPUT_DMG}"
+rm -f "dist/temp.dmg"
 
-# Calculate size needed (Chromium is ~200MB)
+# Calculate size needed (Chromium + extension is ~450-500MB)
 echo "Creating temporary DMG (this may take a few minutes)..."
 hdiutil create -srcfolder "${SOURCE_FOLDER}" -volname "${VOLUME_NAME}" -fs HFS+ \
-    -fsargs "-c c=64,a=16,e=16" -format UDRW -size 400m "dist/temp.dmg"
+    -fsargs "-c c=64,a=16,e=16" -format UDRW -size 600m "dist/temp.dmg"
 
 # Mount the temporary DMG
 echo "Mounting temporary DMG..."
@@ -93,9 +92,13 @@ DEVICE=$(hdiutil attach -readwrite -noverify -noautoopen "dist/temp.dmg" | \
 # Wait for mount
 sleep 2
 
-# Create a symlink to /Applications
+# Create a symlink to /Applications (if not exists)
 echo "Creating Applications symlink..."
-ln -s /Applications "/Volumes/${VOLUME_NAME}/Applications"
+if [ ! -e "/Volumes/${VOLUME_NAME}/Applications" ]; then
+  ln -s /Applications "/Volumes/${VOLUME_NAME}/Applications"
+else
+  echo "Applications symlink already exists, skipping..."
+fi
 
 # Unmount
 echo "Unmounting temporary DMG..."

@@ -2,16 +2,14 @@ import React, { useEffect, useState } from "react";
 import { apiClient } from '../utils/api';
 import { StorageManager } from '../utils/storage';
 import { ResultCard } from './ResultCard';
-import type { CheckResult, User } from '../types';
+import type { CheckResult } from '../types';
 import '../styles/global.css';
 
 interface MainScreenProps {
-  user: User;
   onNavigate: (screen: 'report' | 'chat' | 'check') => void;
-  onLogout: () => void;
 }
 
-export const MainScreen: React.FC<MainScreenProps> = ({ user, onNavigate, onLogout }) => {
+export const MainScreen: React.FC<MainScreenProps> = ({ onNavigate }) => {
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [currentResult, setCurrentResult] = useState<CheckResult | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -80,7 +78,7 @@ export const MainScreen: React.FC<MainScreenProps> = ({ user, onNavigate, onLogo
 
   return (
     <div className="min-w-[400px] bg-dark-bg p-4 animate-fade-in">
-      {/* Header with user info */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-4 pb-4 border-b border-dark-border">
         <div className="flex items-center gap-2">
           <div className="bg-gradient-to-br from-blue-600 to-cyan-600 p-2 rounded-lg">
@@ -89,19 +87,6 @@ export const MainScreen: React.FC<MainScreenProps> = ({ user, onNavigate, onLogo
             </svg>
           </div>
           <h2 className="text-lg font-bold text-white">Phishing Shield</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <img 
-            src={user.picture} 
-            alt={user.name}
-            className="w-8 h-8 rounded-full border-2 border-dark-border"
-          />
-          <button
-            onClick={onLogout}
-            className="px-3 py-1.5 text-xs text-dark-text-secondary hover:text-white bg-dark-surface hover:bg-dark-hover border border-dark-border rounded-lg transition-colors duration-200"
-          >
-            Logout
-          </button>
         </div>
       </div>
 

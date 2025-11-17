@@ -7,6 +7,9 @@ dist/
 chromium/
 .chromium-download/
 
+# Extension private key (NEVER commit this!)
+extension.pem
+
 # macOS
 .DS_Store
 *.icns

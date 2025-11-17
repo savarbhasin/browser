@@ -124,20 +124,11 @@ export interface CheckResult {
   risk_score: number; // 0-100, higher = more dangerous
 }
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
-  created_at: string;
-}
-
 export interface Report {
   id?: string;
   url: string;
   type: 'true_positive' | 'true_negative' | 'false_positive' | 'false_negative';
   description: string;
-  user_id: string;
   created_at?: string;
 }
 

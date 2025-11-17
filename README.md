@@ -32,8 +32,10 @@ See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for detailed build documentat
 ## 🎯 Features
 
 - ✅ One-click installer for Windows and macOS
-- ✅ Launches Chrome with extension pre-loaded
-- ✅ No manual extension installation needed
+- ✅ Fully standalone - Chromium browser bundled
+- ✅ Extension pre-loaded and ready to use
+- ✅ No Chrome installation required
+- ✅ Universal OAuth flow - works on all Chromium builds
 - ✅ Separate user profile for your browser
 - ✅ Desktop shortcuts (optional on Windows)
 - ✅ Clean uninstallation
@@ -47,7 +49,7 @@ See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for detailed build documentat
 - **macOS**: Node.js, Xcode Command Line Tools
 
 ### For End Users:
-- Google Chrome installed
+- **No prerequisites!** Everything is bundled
 - Windows 10+ or macOS 10.13+
 
 ---

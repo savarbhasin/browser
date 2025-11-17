@@ -1,5 +1,5 @@
 import { API_BASE } from '../config';
-import type { CheckResult, User, Report } from '../types';
+import type { CheckResult, Report } from '../types';
 
 export class ApiClient {
   private baseUrl: string;
@@ -22,22 +22,12 @@ export class ApiClient {
     return response.json();
   }
 
-  async registerUser(user: { email: string; name: string; picture?: string }): Promise<User> {
-    const response = await fetch(`${this.baseUrl}/api/users/register`, {
+  async batchCheckUrls(urls: string[]): Promise<{ results: CheckResult[]; total_checked: number; safe_count: number; unsafe_count: number }> {
+    const response = await fetch(`${this.baseUrl}/api/check/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(user)
+      body: JSON.stringify({ urls })
     });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return response.json();
-  }
-
-  async getUser(email: string): Promise<User> {
-    const response = await fetch(`${this.baseUrl}/api/users/${encodeURIComponent(email)}`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
