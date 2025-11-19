@@ -27,6 +27,6 @@ if not exist "%CHROMIUM%" (
 REM Create profile directory if it doesn't exist
 if not exist "%PROFILE%" mkdir "%PROFILE%"
 
-REM Launch Chromium with extension
-start "" "%CHROMIUM%" --load-extension="%EXT%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check
+REM Launch Chromium with extension in developer mode
+start "" "%CHROMIUM%" --load-extension="%EXT%" --disable-extensions-except="%EXT%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check --enable-extension-activity-logging --extensions-on-chrome-urls
 

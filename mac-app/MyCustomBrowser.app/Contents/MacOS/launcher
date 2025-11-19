@@ -25,6 +25,13 @@ PROFILE_PATH="$HOME/Library/Application Support/MyCustomBrowser"
 # Create profile directory if it doesn't exist
 mkdir -p "$PROFILE_PATH"
 
-# Launch Chromium with the extension
-"$CHROMIUM_PATH" --load-extension="$EXT_PATH" --user-data-dir="$PROFILE_PATH" --no-first-run --no-default-browser-check > /dev/null 2>&1 &
+# Launch Chromium with the extension in developer mode
+"$CHROMIUM_PATH" \
+  --load-extension="$EXT_PATH" \
+  --disable-extensions-except="$EXT_PATH" \
+  --user-data-dir="$PROFILE_PATH" \
+  --no-first-run \
+  --no-default-browser-check \
+  --enable-extension-activity-logging \
+  --extensions-on-chrome-urls > /dev/null 2>&1 &
 

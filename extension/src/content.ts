@@ -12,12 +12,10 @@ declare global {
 // Prevent multiple initializations
 if (window._phishingDetectorInitialized) {
   console.log('[Content] Already initialized, skipping...');
-  // Already initialized - exit early
 } else {
   console.log('[Content] Initializing content script...');
   window._phishingDetectorInitialized = true;
 
-  // API Base URL - inline to avoid import issues
   const API_BASE = "http://192.168.2.235:8000";
 
   // Keep-alive mechanism to wake up background service worker
