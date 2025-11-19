@@ -1,6 +1,6 @@
 // Configuration constants
 
-export const API_BASE = "http://localhost:8000";
+export const API_BASE = "http://192.168.2.235:8000";
 
 export const COLORS = {
   safe: "#10b981",      // green

@@ -18,7 +18,7 @@ if (window._phishingDetectorInitialized) {
   window._phishingDetectorInitialized = true;
 
   // API Base URL - inline to avoid import issues
-  const API_BASE = "http://localhost:8000";
+  const API_BASE = "http://192.168.2.235:8000";
 
   // Keep-alive mechanism to wake up background service worker
   const KEEP_ALIVE_PING_INTERVAL = 25000; // 25 seconds (before 30s timeout)
