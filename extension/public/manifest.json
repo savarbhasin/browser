@@ -7,7 +7,7 @@
     "default_title": "Check",
     "default_popup": "popup.html"
   },
-  "permissions": ["tabs", "activeTab", "notifications", "storage"],
+  "permissions": ["tabs", "activeTab", "notifications", "storage", "scripting"],
   "host_permissions": ["http://localhost:8000/*", "<all_urls>"],
   "background": {
     "service_worker": "background.js"

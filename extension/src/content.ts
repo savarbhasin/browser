@@ -1,12 +1,152 @@
 import type { CheckResult } from './types';
 
-// API Base URL - inline to avoid import issues
-const API_BASE = "http://localhost:8000";
+// Log immediately to confirm script loads
+console.log('[Content] Script loaded at', new Date().toISOString(), 'URL:', window.location.href);
+
+declare global {
+  interface Window {
+    _phishingDetectorInitialized?: boolean;
+  }
+}
+
+// Prevent multiple initializations
+if (window._phishingDetectorInitialized) {
+  console.log('[Content] Already initialized, skipping...');
+  // Already initialized - exit early
+} else {
+  console.log('[Content] Initializing content script...');
+  window._phishingDetectorInitialized = true;
+
+  // API Base URL - inline to avoid import issues
+  const API_BASE = "http://localhost:8000";
+
+  // Keep-alive mechanism to wake up background service worker
+  const KEEP_ALIVE_PING_INTERVAL = 25000; // 25 seconds (before 30s timeout)
+  let keepAliveInterval: number | null = null;
+
+  function startPingLoop() {
+    if (keepAliveInterval) {
+      clearInterval(keepAliveInterval);
+    }
+    keepAliveInterval = window.setInterval(() => {
+      chrome.runtime.sendMessage({ type: 'KEEP_ALIVE_PING' }, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          console.warn('[Content] Keep-alive ping failed:', err.message);
+        }
+      });
+    }, KEEP_ALIVE_PING_INTERVAL);
+  }
+
+  async function wakeUpServiceWorker(): Promise<boolean> {
+    // Try to wake up the service worker with a simple message
+    // This forces Chrome to start the service worker if it's asleep
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'KEEP_ALIVE_PING' }, (response) => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            console.log('[Content] Service worker ping failed:', err.message);
+            resolve(false);
+          } else {
+            console.log('[Content] Service worker is awake and responding');
+            resolve(true);
+          }
+        });
+      } catch (error) {
+        console.error('[Content] Failed to send wake-up message:', error);
+        resolve(false);
+      }
+    });
+  }
+
+  async function ensureServiceWorkerReady(): Promise<boolean> {
+    // Try multiple times to wake up the service worker
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const isAwake = await wakeUpServiceWorker();
+      if (isAwake) {
+        console.log('[Content] Service worker ready after', attempt + 1, 'attempt(s)');
+        return true;
+      }
+      // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then cap at 2000ms
+      const delay = Math.min(100 * Math.pow(2, attempt), 2000);
+      console.log(`[Content] Service worker not ready, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    console.error('[Content] Service worker failed to respond after 10 attempts');
+    return false;
+  }
+
+  // Initialize keep-alive system
+  async function initializeKeepAlive() {
+    console.log('[Content] Initializing keep-alive system...');
+    
+    // First, ensure service worker is awake
+    const ready = await ensureServiceWorkerReady();
+    
+    if (ready) {
+      // Start periodic pinging to keep it awake
+      startPingLoop();
+      console.log('[Content] Keep-alive system initialized successfully');
+    } else {
+      console.error('[Content] Could not initialize keep-alive system - service worker not responding');
+    }
+  }
+
+  // Start keep-alive in background (non-blocking)
+  initializeKeepAlive().catch(err => {
+    console.error('[Content] Keep-alive initialization failed:', err);
+  });
 
 interface LinkCheck {
   element: HTMLAnchorElement;
   url: string;
   result: CheckResult | null;
+}
+
+// Helper function to send messages with retry (waits for service worker to wake up)
+async function sendMessageWithRetry(message: any, retries = 5, delay = 500): Promise<any> {
+  console.log(`[Content] Sending message:`, message.type);
+  
+  // First, ensure service worker is awake (but don't wait too long)
+  let workerReady = false;
+  for (let i = 0; i < 3; i++) {
+    workerReady = await wakeUpServiceWorker();
+    if (workerReady) break;
+    await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
+  }
+  
+  if (!workerReady) {
+    console.warn('[Content] Service worker not responding, attempting message anyway...');
+  }
+  
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, (response) => {
+          const err = chrome.runtime.lastError;
+          if (err) {
+            console.warn(`[Content] Message ${message.type} failed (attempt ${attempt + 1}/${retries}):`, err.message);
+            reject(new Error(err.message));
+          } else {
+            console.log(`[Content] Message ${message.type} succeeded on attempt ${attempt + 1}`);
+            resolve(response);
+          }
+        });
+      });
+    } catch (error: any) {
+      if (attempt === retries - 1) {
+        console.error(`[Content] Failed to send message ${message.type} after ${retries} attempts:`, error);
+        throw error;
+      }
+      // Try to wake up service worker again before retrying
+      await wakeUpServiceWorker();
+      // Exponential backoff: delay * 2^attempt
+      const waitTime = delay * Math.pow(2, attempt);
+      console.log(`[Content] Retrying ${message.type} in ${waitTime}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    }
+  }
 }
 
 async function checkUrl(url: string): Promise<CheckResult | null> {
@@ -34,11 +174,15 @@ async function checkUrl(url: string): Promise<CheckResult | null> {
 
 async function batchCheckUrls(urls: string[]): Promise<Map<string, CheckResult>> {
   try {
-    // Send message to background script to perform batch check
-    const response = await chrome.runtime.sendMessage({
+    console.log(`[Content] Starting batch check for ${urls.length} URLs...`);
+    
+    // Send message to background script to perform batch check (with retry)
+    const response = await sendMessageWithRetry({
       type: 'BATCH_CHECK_URLS',
       urls: urls
     });
+
+    console.log(`[Content] Batch check response:`, response);
 
     const resultMap = new Map<string, CheckResult>();
     
@@ -47,11 +191,12 @@ async function batchCheckUrls(urls: string[]): Promise<Map<string, CheckResult>>
       for (const result of response.results) {
         resultMap.set(result.url, result);
       }
+      console.log(`[Content] Mapped ${resultMap.size} results from batch check`);
     }
     
     return resultMap;
   } catch (error) {
-    console.error("Error batch checking URLs:", error);
+    console.error("[Content] Error batch checking URLs:", error);
     return new Map();
   }
 }
@@ -314,11 +459,26 @@ async function checkAndHighlightLinks() {
 
     // Merge all batch results
     const cacheUpdates: Record<string, CheckResult> = {};
+    const unsafeUrls: Array<{ url: string; result: CheckResult }> = [];
+    
     for (const batchResult of batchResults) {
       for (const [url, result] of batchResult.entries()) {
         resultsMap.set(url, result);
         cacheUpdates[`url_${url}`] = result;
+        
+        // Log unsafe/suspicious URLs from batch API
+        if (result && (!result.safe || result.final_verdict === "unsafe" || result.final_verdict === "suspicious")) {
+          unsafeUrls.push({ url, result });
+        }
       }
+    }
+
+    // Log unsafe websites found in batch
+    if (unsafeUrls.length > 0) {
+      console.log(`[URL Safety] ⚠️ Found ${unsafeUrls.length} unsafe/suspicious URL(s) in batch:`);
+      unsafeUrls.forEach(({ url, result }) => {
+        console.log(`  🚨 ${url} - Verdict: ${result.final_verdict}, Confidence: ${result.confidence}, Risk Score: ${result.risk_score}/100`);
+      });
     }
 
     // Update cache with all new results
@@ -356,12 +516,53 @@ function debouncedCheckAndHighlight() {
   }, 500);
 }
 
+// Check if the current page itself is unsafe
+async function checkCurrentPageSafety() {
+  try {
+    const currentUrl = window.location.href;
+    
+    // First, check storage
+    let result = await new Promise<CheckResult | null>((resolve) => {
+      chrome.storage.local.get([`url_${currentUrl}`], (items) => {
+        resolve(items[`url_${currentUrl}`] || null);
+      });
+    });
+
+    // If no result in storage, request a check from background script
+    if (!result) {
+      console.log(`[Content] No cached result for ${currentUrl}, requesting check from background...`);
+      try {
+        const response = await sendMessageWithRetry({
+          type: 'CHECK_CURRENT_PAGE',
+          url: currentUrl
+        });
+        result = response?.result || null;
+      } catch (e) {
+        console.error("[Content] Failed to request check from background:", e);
+      }
+    }
+
+    // Show overlay if unsafe/suspicious
+    if (result && (!result.safe || result.final_verdict === "unsafe" || result.final_verdict === "suspicious")) {
+      console.log(`[Content] Unsafe/suspicious page detected: ${currentUrl}. Verdict: ${result.final_verdict}`);
+      const overlay = createWarningOverlay(result);
+      document.body.appendChild(overlay);
+    } else if (result) {
+      console.log(`[Content] Page ${currentUrl} is safe. Verdict: ${result.final_verdict}`);
+    }
+  } catch (e) {
+    console.error("[Content] Error checking current page safety:", e);
+  }
+}
+
 // Run on page load
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
+    checkCurrentPageSafety();
     setTimeout(checkAndHighlightLinks, 1000); // Wait a bit for page to fully load
   });
 } else {
+  checkCurrentPageSafety();
   setTimeout(checkAndHighlightLinks, 1000);
 }
 
@@ -703,12 +904,21 @@ function createWarningOverlay(result: CheckResult): HTMLElement {
   return overlay;
 }
 
-// Listen for messages from background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'SHOW_WARNING') {
-    const overlay = createWarningOverlay(message.result);
-    document.body.appendChild(overlay);
-  }
-});
+  // Listen for messages from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'PING') {
+      sendResponse({ status: 'pong' });
+      return;
+    }
+
+    console.log(`[Content] Received message:`, message);
+    if (message.type === 'SHOW_WARNING') {
+      console.log(`[Content] Showing warning overlay for ${message.result.url}`);
+      const overlay = createWarningOverlay(message.result);
+      document.body.appendChild(overlay);
+    }
+  });
+} // End of global guard
+
 
 export {};

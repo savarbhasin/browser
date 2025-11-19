@@ -3,8 +3,46 @@ import type { CheckResult } from './types';
 // API Base URL - inline to avoid import issues
 const API_BASE = "http://localhost:8000";
 
-// Track checked URLs to avoid duplicate notifications
-const checkedUrls = new Set<string>();
+// Log service worker startup
+console.log('[Background] ========================================');
+console.log('[Background] Service Worker Starting...', new Date().toISOString());
+console.log('[Background] ========================================');
+
+// Track if we've initialized (for debugging)
+let isInitialized = false;
+
+// Helper to manage notified URLs in session storage (persists while browser is open)
+async function hasNotified(url: string): Promise<boolean> {
+  const data = await chrome.storage.session.get("notifiedUrls");
+  const list = data.notifiedUrls || [];
+  return list.includes(url);
+}
+
+async function addNotified(url: string) {
+  const data = await chrome.storage.session.get("notifiedUrls");
+  const list = data.notifiedUrls || [];
+  if (!list.includes(url)) {
+    list.push(url);
+    await chrome.storage.session.set({ notifiedUrls: list });
+  }
+}
+
+// Initialize function to set up all listeners
+function initializeServiceWorker() {
+  if (isInitialized) {
+    console.log('[Background] Already initialized, skipping...');
+    return;
+  }
+  
+  console.log('[Background] Initializing service worker...');
+  isInitialized = true;
+  
+  // Log when service worker becomes active
+  console.log('[Background] Service worker is ACTIVE and ready to receive messages');
+}
+
+// Call initialization immediately
+initializeServiceWorker();
 
 async function checkUrl(url: string): Promise<CheckResult | null> {
   try {
@@ -52,10 +90,33 @@ async function showNotification(url: string, result: CheckResult) {
   });
 }
 
-// Helper function to send message with retry
-async function sendMessageToTab(tabId: number, message: any, retries = 3, delay = 500) {
+// Helper function to send message with retry and injection
+async function sendMessageToTab(tabId: number, message: any, retries = 10, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     try {
+      // Try to ping the tab first to ensure it's ready
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: "PING" });
+      } catch (e) {
+        // If ping fails, try to inject content script
+        console.log(`[Background] Ping failed for tab ${tabId}, attempting to inject content script...`);
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ["content.js"]
+          });
+          // Wait for script to initialize
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Try ping again immediately
+          await chrome.tabs.sendMessage(tabId, { type: "PING" });
+        } catch (injectError) {
+           console.log(`[Background] Failed to inject/ping content script (attempt ${i+1}/${retries}):`, injectError);
+           // Don't throw here, let the outer loop retry
+           throw new Error("Content script not ready after injection attempt");
+        }
+      }
+      
       await chrome.tabs.sendMessage(tabId, message);
       return true; // Success
     } catch (error) {
@@ -80,29 +141,34 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   const url = tab.url;
   
-  // Skip if we've already checked this URL
-  if (checkedUrls.has(url)) {
-    return;
-  }
-
-  // Check the URL
+  // Check the URL (always check, don't skip)
+  console.log(`[Background] Checking URL: ${url}`);
   const result = await checkUrl(url);
+  console.log(`[Background] Check result for ${url}:`, result);
+  
   if (result) {
-    checkedUrls.add(url);
+    // Store result for content script immediately so it's available if the script loads late
+    await chrome.storage.local.set({ [`url_${url}`]: result });
     
-    // Show notification for unsafe/suspicious sites
+    // Show notification for unsafe/suspicious sites (but only once per URL per session)
     if (!result.safe || result.final_verdict === "unsafe" || result.final_verdict === "suspicious") {
-      await showNotification(url, result);
+      console.log(`[Background] Unsafe/Suspicious URL detected: ${url}. Verdict: ${result.final_verdict}`);
+      
+      // Check storage instead of Set
+      const alreadyNotified = await hasNotified(url);
+      if (!alreadyNotified) {
+        await showNotification(url, result);
+        await addNotified(url);
+      }
       
       // Send message to content script to show full-page warning (with retry)
-      await sendMessageToTab(tabId, {
+      console.log(`[Background] Sending warning to tab ${tabId}`);
+      const sent = await sendMessageToTab(tabId, {
         type: "SHOW_WARNING",
         result: result
       });
+      console.log(`[Background] Warning sent to tab ${tabId}: ${sent}`);
     }
-    
-    // Store result for content script
-    chrome.storage.local.set({ [`url_${url}`]: result });
   }
 });
 
@@ -110,12 +176,18 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   try {
     const tab = await chrome.tabs.get(activeInfo.tabId);
-    if (tab.url && !checkedUrls.has(tab.url)) {
+    if (tab.url) {
       const result = await checkUrl(tab.url);
       if (result) {
-        checkedUrls.add(tab.url);
+        chrome.storage.local.set({ [`url_${tab.url}`]: result });
+        
         if (!result.safe || result.final_verdict === "unsafe" || result.final_verdict === "suspicious") {
-          await showNotification(tab.url, result);
+          // Check storage instead of Set
+          const alreadyNotified = await hasNotified(tab.url);
+          if (!alreadyNotified) {
+            await showNotification(tab.url, result);
+            await addNotified(tab.url);
+          }
           
           // Send message to content script to show full-page warning (with retry)
           await sendMessageToTab(activeInfo.tabId, {
@@ -123,7 +195,6 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
             result: result
           });
         }
-        chrome.storage.local.set({ [`url_${tab.url}`]: result });
       }
     }
   } catch (error) {
@@ -131,26 +202,90 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log("URL Phishing Detector installed");
+  
+  // Inject content script into all open tabs (to fix "orphan" tabs after reload)
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!tab.id || !tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("edge://") || tab.url.startsWith("about:") || tab.url.startsWith("moz-extension://") || tab.url.startsWith("chrome-extension://")) {
+        continue;
+      }
+      
+      try {
+        // Check if we can inject
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ["content.js"]
+        });
+        console.log(`[Background] Injected content script into ${tab.url}`);
+      } catch (err) {
+        // It's expected to fail on some pages (restricted domains)
+        console.log(`[Background] Skipped injection for ${tab.url}:`, err);
+      }
+    }
+  } catch (e) {
+    console.error("Failed to inject content scripts:", e);
+  }
 });
 
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Background] Message received:', message.type, 'from tab:', sender.tab?.id);
+  
+  // Handle keep-alive ping (keeps service worker awake)
+  if (message.type === 'KEEP_ALIVE_PING') {
+    console.log('[Background] Keep-alive ping received - responding with OK');
+    sendResponse({ ok: true, timestamp: Date.now() });
+    return true;  // Keep channel open for async response
+  }
+
   if (message.type === 'BATCH_CHECK_URLS') {
+    console.log(`[Background] Received BATCH_CHECK_URLS request for ${message.urls?.length || 0} URLs`);
+    
     // Perform batch check and send response
     batchCheckUrls(message.urls)
       .then(results => {
+        console.log(`[Background] Batch check complete, sending ${results.results?.length || 0} results`);
         sendResponse(results);
       })
       .catch(error => {
-        console.error("Batch check failed:", error);
+        console.error("[Background] Batch check failed:", error);
         sendResponse({ results: [], error: error.message });
       });
     
     // Return true to indicate we'll respond asynchronously
     return true;
   }
+  
+  if (message.type === 'CHECK_CURRENT_PAGE') {
+    // Content script is requesting a check for the current page
+    console.log(`[Background] Content script requesting check for: ${message.url}`);
+    checkUrl(message.url)
+      .then(result => {
+        if (result) {
+          chrome.storage.local.set({ [`url_${message.url}`]: result });
+          console.log(`[Background] Check complete for ${message.url}, verdict: ${result.final_verdict}`);
+          sendResponse({ result });
+        } else {
+          console.log(`[Background] No result for ${message.url}`);
+          sendResponse({ result: null });
+        }
+      })
+      .catch(error => {
+        console.error("[Background] Check failed:", error);
+        sendResponse({ result: null, error: error.message });
+      });
+    
+    // Return true to indicate we'll respond asynchronously
+    return true;
+  }
+  
+  // Log unknown message types
+  console.warn('[Background] Unknown message type:', message.type);
+  sendResponse({ error: 'Unknown message type' });
+  return true;
 });
 
 async function batchCheckUrls(urls: string[]): Promise<{ results: CheckResult[]; total_checked: number; safe_count: number; unsafe_count: number }> {
