@@ -1,7 +1,7 @@
 import type { CheckResult } from './types';
 
 // API Base URL - inline to avoid import issues
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://192.168.2.235:8000";
 
 // Log service worker startup
 console.log('[Background] ========================================');
