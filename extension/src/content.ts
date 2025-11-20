@@ -12,11 +12,13 @@ declare global {
 // Prevent multiple initializations
 if (window._phishingDetectorInitialized) {
   console.log('[Content] Already initialized, skipping...');
+  // Already initialized - exit early
 } else {
   console.log('[Content] Initializing content script...');
   window._phishingDetectorInitialized = true;
 
-  const API_BASE = "http://192.168.2.235:8000";
+  // API Base URL - inline to avoid import issues
+  const API_BASE = "http://localhost:8000";
 
   // Keep-alive mechanism to wake up background service worker
   const KEEP_ALIVE_PING_INTERVAL = 25000; // 25 seconds (before 30s timeout)
